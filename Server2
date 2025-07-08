@@ -1,0 +1,103 @@
+// server.js
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const sqlite3 = require('sqlite3').verbose();
+const app = express();
+
+app.use(express.json());
+
+// Initialize SQLite database
+const db = new sqlite3.Database('./leave_encashment.db', (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to SQLite database.');
+    // Create tables
+    db.run(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT UNIQUE
+      )
+    `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS leaves (
+        employee_id INTEGER PRIMARY KEY,
+        balance INTEGER NOT NULL,
+        FOREIGN KEY (employee_id) REFERENCES employees(id)
+      )
+    `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id INTEGER,
+        leaves_encashed INTEGER,
+        shares_allocated REAL,
+        status TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (employee_id) REFERENCES employees(id)
+      )
+    `);
+    // Insert sample data
+    db.run(`INSERT OR IGNORE INTO employees (id, name, email) VALUES (1, 'John Doe', 'john.doe@company.com')`);
+    db.run(`INSERT OR IGNORE INTO leaves (employee_id, balance) VALUES (1, 20)`);
+  }
+});
+
+// Middleware for authentication
+const authenticateToken = (req, res, next) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  jwt.verify(token, 'secret_key', (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+
+// Get leave balance
+app.get('/api/employee/leave-balance', authenticateToken, (req, res) => {
+  db.get('SELECT balance FROM leaves WHERE employee_id = ?', [req.user.id], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Server error' });
+    }
+    res.json({ balance: row ? row.balance : 0 });
+  });
+});
+
+// Get current share price (mocked)
+app.get('/api/shares/price', (req, res) => {
+  res.json({ price: 100.50 });
+});
+
+// Process encashment
+app.post('/api/encash', authenticateToken, (req, res) => {
+  const { leaves } = req.body;
+  db.get('SELECT balance FROM leaves WHERE employee_id = ?', [req.user.id], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Server error' });
+    }
+    const balance = row ? row.balance : 0;
+    if (leaves > balance) {
+      return res.status(400).json({ error: 'Insufficient leave balance' });
+    }
+
+    db.run('UPDATE leaves SET balance = balance - ? WHERE employee_id = ?', [leaves, req.user.id], (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Server error' });
+      }
+      db.run(
+        'INSERT INTO transactions (employee_id, leaves_encashed, shares_allocated, status) VALUES (?, ?, ?, ?)',
+        [req.user.id, leaves, leaves * 100.50, 'pending'],
+        (err) => {
+          if (err) {
+            return res.status(500).json({ error: 'Server error' });
+          }
+          res.json({ message: 'Encashment request submitted' });
+        }
+      );
+    });
+  });
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
