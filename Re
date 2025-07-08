@@ -1,0 +1,65 @@
+// src/App.js
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './App.css';
+
+const App = () => {
+  const [leaveBalance, setLeaveBalance] = useState(0);
+  const [sharePrice, setSharePrice] = useState(0);
+  const [leavesToEncash, setLeavesToEncash] = useState(0);
+  const [error, setError] = useState('');
+
+  // Mock user for testing (replace with real auth in production)
+  const user = {
+    id: 1,
+    name: 'John Doe',
+    token: 'your_jwt_token_here' // Replace with the token from Step 1.5
+  };
+
+  useEffect(() => {
+    // Fetch leave balance
+    axios.get('http://localhost:3000/api/employee/leave-balance', {
+      headers: { Authorization: `Bearer ${user.token}` }
+    })
+      .then(res => setLeaveBalance(res.data.balance))
+      .catch(err => setError('Failed to fetch leave balance'));
+
+    // Fetch share price
+    axios.get('http://localhost:3000/api/shares/price')
+      .then(res => setSharePrice(res.data.price))
+      .catch(err => setError('Failed to fetch share price'));
+  }, []);
+
+  const handleEncash = () => {
+    if (leavesToEncash <= 0 || leavesToEncash > leaveBalance) {
+      setError('Invalid leave amount');
+      return;
+    }
+    axios.post('http://localhost:3000/api/encash', { leaves: leavesToEncash }, {
+      headers: { Authorization: `Bearer ${user.token}` }
+    })
+      .then(res => alert('Encashment request submitted!'))
+      .catch(err => setError('Encashment failed'));
+  };
+
+  return (
+    <div className="dashboard">
+      <h2>Welcome, {user.name}</h2>
+      <div>
+        <p>Available Leave Balance: {leaveBalance} days</p>
+        <p>Current Share Price: ${sharePrice}</p>
+        <p>Estimated Shares: {(leavesToEncash * sharePrice).toFixed(2)}</p>
+        <input
+          type="number"
+          value={leavesToEncash}
+          onChange={(e) => setLeavesToEncash(e.target.value)}
+          placeholder="Enter leaves to encash"
+        />
+        <button onClick={handleEncash}>Encash Leaves</button>
+        {error && <p style={{ color: 'red' }}>{error}</p>}
+      </div>
+    </div>
+  );
+};
+
+export default App;
