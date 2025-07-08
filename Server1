@@ -1,0 +1,63 @@
+// server.js
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
+const app = express();
+
+app.use(express.json());
+
+// Database connection
+const pool = new Pool({
+  user: 'db_user',
+  host: 'localhost',
+  database: 'leave_encashment',
+  password: 'db_password',
+  port: 5432,
+});
+
+// Middleware for authentication
+const authenticateToken = (req, res, next) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  jwt.verify(token, 'secret_key', (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+
+// Get leave balance
+app.get('/api/employee/leave-balance', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT balance FROM leaves WHERE employee_id = $1', [req.user.id]);
+    res.json({ balance: result.rows[0]?.balance || 0 });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get current share price (mocked for simplicity)
+app.get('/api/shares/price', async (req, res) => {
+  res.json({ price: 100.50 }); // Replace with real-time share price API
+});
+
+// Process encashment
+app.post('/api/encash', authenticateToken, async (req, res) => {
+  const { leaves } = req.body;
+  try {
+    const leaveResult = await pool.query('SELECT balance FROM leaves WHERE employee_id = $1', [req.user.id]);
+    const balance = leaveResult.rows[0]?.balance || 0;
+    if (leaves > balance) return res.status(400).json({ error: 'Insufficient leave balance' });
+
+    // Update leave balance and record transaction
+    await pool.query('UPDATE leaves SET balance = balance - $1 WHERE employee_id = $2', [leaves, req.user.id]);
+    await pool.query('INSERT INTO transactions (employee_id, leaves_encashed, shares_allocated, status) VALUES ($1, $2, $3, $4)', 
+      [req.user.id, leaves, leaves * 100.50, 'pending']);
+    
+    res.json({ message: 'Encashment request submitted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
