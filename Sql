@@ -1,0 +1,20 @@
+CREATE TABLE employees (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100),
+  email VARCHAR(100) UNIQUE
+);
+
+CREATE TABLE leaves (
+  employee_id INTEGER REFERENCES employees(id),
+  balance INTEGER NOT NULL,
+  PRIMARY KEY (employee_id)
+);
+
+CREATE TABLE transactions (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER REFERENCES employees(id),
+  leaves_encashed INTEGER,
+  shares_allocated DECIMAL,
+  status VARCHAR(20),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
